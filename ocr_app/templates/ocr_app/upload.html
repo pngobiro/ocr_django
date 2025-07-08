@@ -1,0 +1,46 @@
+<!-- ocr_app/templates/ocr_app/upload.html -->
+{% extends 'ocr_app/base.html' %}
+
+{% block title %}Upload Image - OCR to Word{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-upload"></i> Upload Image for OCR Processing
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <div class="upload-area mb-3">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h5>Select an image file</h5>
+                        <p class="text-muted">Supported formats: JPG, PNG, GIF, BMP</p>
+                        {{ form.image }}
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-eye"></i> Process OCR
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-4">
+                    <h6>How it works:</h6>
+                    <ol class="text-muted">
+                        <li>Upload an image containing text</li>
+                        <li>NVIDIA's OCR service processes the image</li>
+                        <li>Text is extracted and formatted into a Word document</li>
+                        <li>Download your Word document with the extracted text</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

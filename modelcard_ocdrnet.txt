@@ -1,0 +1,294 @@
+This model card combines the relevant information of OCR and OCD models
+OCRNet Model Overview
+Description
+
+Optical character recognition network recognizes characters from the gray images.
+Terms of use
+
+License to use these models is covered by the Model EULA. By downloading the unpruned or pruned version of the model, you accept the terms and conditions of these licenses.
+References(s):
+Citations
+
+    Baek, J., Kim, G., Lee, J., Park, S., Han, D., Yun, S., ... & Lee, H. (2019). What is wrong with scene text recognition model comparisons? dataset and model analysis. In Proceedings of the IEEE/CVF international conference on computer vision (pp. 4715-4723).
+    Zhang, Y., Gueguen, L., Zharkov, I., Zhang, P., Seifert, K., & Kadlec, B. (2017, July). Uber-text: A large-scale dataset for optical character recognition from street-level imagery. In SUNw: Scene Understanding Workshop-CVPR (Vol. 2017, p. 5).
+    Singh, A., Pang, G., Toh, M., Huang, J., Galuba, W., & Hassner, T. (2021). Textocr: Towards large-scale end-to-end reasoning for arbitrary-shaped scene text. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition (pp. 8802-8812)
+    Graves, Alex, et al. "Connectionist temporal classification: labelling unsegmented sequence data with recurrent neural networks." In: Proceedings of the 23rd international conference on Machine learning (2006)
+    He, K., Zhang, X., Ren, S., Sun, J.: Deep Residual Learning for Image Recognition. In: CVPR (2015)
+    Zhou, D., Yu, Z., Xie, E., Xiao, C., Anandkumar, A., Feng, J., & Alvarez, J. M. (2022, June). Understanding the robustness in vision transformers. In International Conference on Machine Learning (pp. 27378-27394). PMLR.
+    Kuo, C. W., Ashmore, J. D., Huggins, D., & Kira, Z. (2019, January). Data-efficient graph embedding learning for PCB component detection. In 2019 IEEE Winter Conference on Applications of Computer Vision (WACV) (pp. 551-560). IEEE.
+
+Model Architecture:
+
+Architecture Type: Convolution Neural Network (CNN)
+Network Architecture: ResNet50
+Model Version:
+
+    trainable_v1.0 - Pre-trained model with ResNet backbone on scene text.
+    deployable_v1.0 - Models deployable with ResNet backbone.
+    trainable_v2.0 - Pre-trained model with FAN backbone on scene text.
+    deployable_v2.0 - Model deployable with FAN backbone on scene text.
+    trainable_v2.1 - Pre-trained model with FAN backbone on PCB text.
+    deployable_v2.1 - Model deployable with FAN backbone on PCB text.
+
+Input:
+
+Input Type(s): Image
+Input Format: Gray Image
+Input Parameters: 3D
+Other Properties Related to Input:
+
+    Gray Images of 1 X 32 X 100 (C H W) for trainable_v1.0/deployable_v1.0
+    Gray Images of 1 X 64 X 200 (C H W) for trainable_v2.0/trainable_v2.1/deployable_v2.0/deployable_v2.1
+
+Output:
+
+Output Type(s): Sequence of characters
+Output Format: Character Id sequence: Text String(s)
+Other Properties Related to Output: None
+Software Integration:
+
+Runtime(s): NVIDIA AI Enterprise
+Toolkit: TAO Framework
+Supported Hardware Platform(s): Ampere, Jetson, Hopper, Lovelace, Pascal, Turing
+Supported Operating System(s): Linux
+Training & Finetuning:
+Dataset:
+
+OCRNet pretrained model was trained on Uber-Text and TextOCR dataset. The Uber-Text contains street-level images collected from car mounted sensors and truths annotated by a team of image analysts. The TextOCR is the images with annotated texts from OpenImages dataset. After collecting the original data from Uber-text and TextOCR, we remove all the text images with * label in Uber-text and only keep alphanumeric text images with the maximum length is 25 in both datasets. We finally construct the dataset with 805007 text images for training and 24388 images for validation.
+Inference:
+
+Engine: TensorRT
+Test Hardware:
+
+    Orin Nano
+    Orin NX
+    AGX Orin
+    L4
+    L40
+    T4
+    A2
+    A30
+    A100
+    H100
+
+OCDNet Model Overview
+Model Overview
+
+The model described in this card is an optical characters detection network, which aims to detect text in images. Trainable and deployable OCDNet models are provided. These are trained on Uber-Text dataset and ICDAR2015 dataset respectively.
+Terms of use
+
+License to use these models is covered by the Model EULA. By downloading the unpruned or pruned version of the model, you accept the terms and conditions of these licenses.
+Model Architecture
+
+This model is based on a relatively sophisticated text detection network called DBNet. DBNet is a network architecture for real-time scene text detection with differentiable binarization. It aims to solve the problem of text localization and segmentation in natural images with complex backgrounds and various text shapes.
+Training
+
+The training algorithm inserts the binarization operation into the segmentation network and jointly optimizes it so that the network can learn to separate foreground and background pixels more effectively. The binarization threshold is learned by minimizing the IoU loss between the predicted binary map and the ground truth binary map.
+Training Data
+
+The trainable models were trained on the Uber-Text dataset and ICDAR2015 dataset respectively. The Uber-Text dataset contains street-level images collected from car mounted sensors and truths annotated by a team of image analysts--including train_4Kx4K, train_1Kx1K, val_4Kx4K, val_1Kx1K, test_4Kx4K as the training datasets and test_1Kx1K as the validation dataset. The dataset was constructed with 107812 images for training and 10157 images for validation. The ICDAR2015 dataset contains 1000 training images and 500 test images. The deployable models were ONNX models that were exported using the trainable models.
+Performance
+Evaluation Data
+
+The OCDNet model was evaluated using the Uber-Text test dataset and ICDAR2015 test dataset.
+Methodology and KPI
+
+The key performance indicator is the hmean of detection. The KPI for the evaluation data are reported below.
+model	test dataset	hmean
+ocdnet_deformable_resnet18	Uber-Text	81.1%
+ocdnet_deformable_resnet50	Uber-Text	82.2%
+ocdnet_fan_tiny_2x_ubertext.pth	Uber-Text	86.0%
+ocdnet_fan_tiny_2x_icdar.pth	ICDAR2015	85.3%
+ocdnet_fan_tiny_2x_icdar_pruned.pth	ICDAR2015	84.8%
+ocdnet_vit_pcb.pth	Internal PCB validation	69.3%
+Real-time Inference Performance
+
+The inference uses FP16 precision. The input shape is <batch>x3x640x640. The inference performance runs against an OCDNet-deployable model with trtexec on AGX Orin, Orin NX, Orin Nano, NVIDIA L4, NVIDIA L4, and NVIDIA A100 GPUs. The Jetson devices run at Max-N configuration for maximum system performance. The data is for inference-only performance. The end-to-end performance with streaming video data might vary slightly depending on the application's use case.
+Model	Device	precision	batch_size	FPS
+ocdnet_deformable_resnet18	Orin Nano	FP16	32	31
+ocdnet_deformable_resnet18	Orin NX	FP16	32	46
+ocdnet_deformable_resnet18	AGX Orin	FP16	32	122
+ocdnet_deformable_resnet18	T4	FP16	32	294
+ocdnet_deformable_resnet18	L4	FP16	32	432
+ocdnet_deformable_resnet18	A100	FP16	32	1786
+ocdnet_fan_tiny_2x_icdar	Orin Nano	FP16	1	0.57
+ocdnet_fan_tiny_2x_icdar	AGX Orin	FP16	1	2.24
+ocdnet_fan_tiny_2x_icdar	T4	FP16	1	2.74
+ocdnet_fan_tiny_2x_icdar	L4	FP16	1	5.36
+ocdnet_fan_tiny_2x_icdar	A30	FP16	1	8.34
+ocdnet_fan_tiny_2x_icdar	L40	FP16	1	15.01
+ocdnet_fan_tiny_2x_icdar	A100-sxm4-80gb	FP16	1	16.61
+ocdnet_fan_tiny_2x_icdar	H100-sxm-80gb-hbm3	FP16	1	29.13
+ocdnet_fan_tiny_2x_icdar_pruned	Orin Nano	FP16	2	0.79
+ocdnet_fan_tiny_2x_icdar_pruned	Orin NX	FP16	2	1.18
+ocdnet_fan_tiny_2x_icdar_pruned	AGX Orin	FP16	2	3.08
+ocdnet_fan_tiny_2x_icdar_pruned	A2	FP16	1	2.30
+ocdnet_fan_tiny_2x_icdar_pruned	T4	FP16	2	3.51
+ocdnet_fan_tiny_2x_icdar_pruned	L4	FP16	1	7.23
+ocdnet_fan_tiny_2x_icdar_pruned	A30	FP16	2	11.37
+ocdnet_fan_tiny_2x_icdar_pruned	L40	FP16	2	19.04
+ocdnet_fan_tiny_2x_icdar_pruned	A100-sxm4-80gb	FP16	2	22.66
+ocdnet_fan_tiny_2x_icdar_pruned	H100-sxm-80gb-hbm3	FP16	2	40.07
+How to Use This Model
+
+This model needs to be used with NVIDIA Hardware and Software: The model can run on any NVIDIA GPU, including NVIDIA Jetson devices, with TAO Toolkit, DeepStream SDK or TensorRT.
+
+The primary use case for this model is to detect text on images.
+
+There are two types of models provided (both unpruned).
+
+    trainable
+    deployable
+
+The trainable models are intended for training with the user's own dataset using TAO Toolkit. This can provide high-fidelity models that are adapted to the use case. A Jupyter notebook is available as a part of the TAO container and can be used to re-train.
+
+The deployable models share the same structure as the trainable model, but in onnx format. The deployable models can be deployed using TensorRT, nvOCDR, and DeepStream.
+Input
+
+Images of C x H x W (H and W should be multiples of 32.)
+Output
+
+BBox or polygon coordinates for each detected text in the input image
+Instructions to Use the Model with TAO
+
+To use these models as pretrained weights for transfer learning, use the snippet below as a template for the model component of the experiment spec file to train an OCDNet model. For more information on the experiment spec file, refer to the TAO Toolkit User Guide.
+
+To use trainable_resnet18_v1.0 model:
+
+model:
+  load_pruned_graph: False
+  pruned_graph_path: '/results/prune/pruned_0.1.pth'
+  pretrained_model_path: '/data/ocdnet/ocdnet_deformable_resnet18.pth'
+  backbone: deformable_resnet18
+
+To use trainable_ocdnet_vit_v1.0 model:
+
+model:
+  load_pruned_graph: False
+  pruned_graph_path: '/results/prune/pruned_0.1.pth'
+  pretrained_model_path: '/data/ocdnet/ocdnet_fan_tiny_2x_icdar.pth'
+  backbone: fan_tiny_8_p4_hybrid
+  enlarge_feature_map_size: True
+  activation_checkpoint: True
+
+Instructions to deploy the model with DeepStream
+
+To create the entire end-to-end video analytic application, deploy this model with DeepStream SDK. DeepStream SDK is a streaming analytic toolkit to accelerate building AI-based video analytic applications. DeepStream supports direct integration of this model into the Deepstream sample app.
+
+To deploy this model with DeepStream, follow these instructions.
+Limitations
+Restricted Usage in Different Fields
+
+The NVIDIA OCDNet trainable model is trained on Uber Text, ICDAR2015 and PCB text dataset, which contains street-view images only. To get better accuracy in a specific field, more data is usually required to fine tune the pre-trained model with TAO Toolkit.
+Model versions:
+
+    trainable_resnet18_v1.0 - Pre-trained models with deformable-resnet18 backbone, trained on Uber-Text dataset.
+    trainable_resnet50_v1.0 - Pre-trained models with deformable-resnet50 backbone, trained on Uber-Text dataset.
+    trainable_ocdnet_vit_v1.0 - Pre-trained models with fan-tiny backbone, trained on ICDAR2015 dataset.
+    trainable_ocdnet_vit_v1.1 - Pre-trained models with fan-tiny backbone, trained on Uber-Text dataset.
+    trainable_ocdnet_vit_v1.2 - Pre-trained models with fan-tiny backbone, trained on PCB dataset.
+    trainable_ocdnet_vit_v1.3 - Pre-trained models with fan-tiny backbone, trained on ImageNet2012 dataset.
+    trainable_ocdnet_vit_v1.4 - Pre-trained models with fan-tiny backbone, trained on ICDAR2015 dataset and model are pruned.
+    deployable_v1.0 - Model deployable with deformable-resnet backbone.
+    deployable_v2.0 - Model deployable with fan-tiny backbone, trained on ICDAR2015.
+    deployable_v2.1 - Model deployable with fan-tiny backbone, trained on Uber-Text.
+    deployable_v2.2 - Model deployable with fan-tiny backbone, trained on PCB dataset.
+    deployable_v2.3 - Model deployable with fan-tiny backbone, trained on ICDAR2015 and model are pruned.
+
+Reference
+Citations
+
+    Liao M., Wan Z., Yao C., Chen K., Bai X.: Real-time Scene Text Detection with Differentiable Binarization (2020).
+    Dai, J., Qi, H., Xiong, Y., Li, Y., Zhang, G., Hu, H., and Wei, Y: Deformable convolutional networks. (2017).
+    He, W., Zhang, X., Yin, F., and Liu, C.: Deep direct regression for multi-oriented scene text detection. (2017).
+    Zhang, Y., Gueguen, L., Zharkov, I., Zhang, P., Seifert, K., & Kadlec, B. (2017, July). Uber-text: A large-scale dataset for optical character recognition from street-level imagery. In SUNw: Scene Understanding Workshop-CVPR (Vol. 2017, p. 5).
+    Zhou, D., Yu, Z., Xie, E., Xiao, C., Anandkumar, A., Feng, J., & Alvarez, J. M. (2022, June). Understanding the robustness in vision transformers. In International Conference on Machine Learning (pp. 27378-27394). PMLR.
+    Kuo, C. W., Ashmore, J. D., Huggins, D., & Kira, Z. (2019, January). Data-efficient graph embedding learning for PCB component detection. In 2019 IEEE Winter Conference on Applications of Computer Vision (WACV) (pp. 551-560). IEEE.
+
+Using TAO Pre-trained Models
+
+    Get TAO Container
+    Get other purpose-built models from the NGC model registry:
+        TrafficCamNet
+        PeopleNet
+        PeopleNet
+        PeopleNet-Transformer
+        DashCamNet
+        FaceDetectIR
+        VehicleMakeNet
+        VehicleTypeNet
+        PeopleSegNet
+        PeopleSemSegNet
+        License Plate Detection
+        License Plate Recognition
+        Gaze Estimation
+        Facial Landmark
+        Heart Rate Estimation
+        Gesture Recognition
+        Emotion Recognition
+        FaceDetect
+        2D Body Pose Estimation
+        ActionRecognitionNet
+        ActionRecognitionNet
+        PoseClassificationNet
+        People ReIdentification
+        PointPillarNet
+        CitySegFormer
+        Retail Object Detection
+        Retail Object Embedding
+        Optical Inspection
+        Optical Character Detection
+        Optical Character Recognition
+        PCB Classification
+        PeopleSemSegFormer
+        LPDNet
+        License Plate Recognition
+        Gaze Estimation
+        Facial Landmark
+        Heart Rate Estimation
+        Gesture Recognition
+        Emotion Recognition
+        FaceDetect
+        2D Body Pose Estimation
+        ActionRecognitionNet
+        ActionRecognitionNet
+        PoseClassificationNet
+        People ReIdentification
+        PointPillarNet
+        CitySegFormer
+        Retail Object Detection
+        Retail Object Embedding
+        Optical Inspection
+        Optical Character Detection
+        Optical Character Recognition
+        PCB Classification
+        PeopleSemSegFormer
+
+License
+
+The license to use these models is covered by the Model EULA. By downloading the unpruned or pruned version of the model, you accept the terms and conditions of these licenses.
+Technical Blogs
+
+    Train like a ‘pro’ without being an AI expert using TAO AutoML
+    Create Custom AI models using NVIDIA TAO Toolkit with Azure Machine Learning
+    Developing and Deploying AI-powered Robots with NVIDIA Isaac Sim and NVIDIA TAO
+    Learn endless ways to adapt and supercharge your AI workflows with TAO - Whitepaper
+    Customize Action Recognition with TAO and deploy with DeepStream
+    Read the 2 part blog on training and optimizing 2D body pose estimation model with TAO - Part 1 | Part 2
+    Learn how to traina real-time License plate detection and recognition app with TAO and DeepStream.
+    Model accuracy is extremely important. Learn how to achieve state-of-the-art accuracy for classification and object detection models using TAO.
+
+Suggested Reading
+
+    More information about TAO Toolkit and pre-trained models can be found at the NVIDIA Developer Zone.
+    Read the TAO Toolkit Quick Start Guide and release notes.
+    If you have any questions or feedback, please refer to the discussions on the TAO Toolkit Developer Forums.
+    Deploy your model on the edge using the DeepStream SDK.
+
+Ethical AI
+
+The NVIDIA OCDNet model detects optical characters.
+
+NVIDIA’s platforms and application frameworks enable developers to build a wide array of AI applications. Consider potential algorithmic bias when choosing or creating the models being deployed. Work with the model’s developers to ensure that it meets the requirements for the relevant industry and use case, that the necessary instructions and documentation are provided to understand error rates, confidence intervals, and results, and that the model is being used under the conditions and in the manner intended.
+
+Please report security vulnerabilities or NVIDIA AI Concerns here

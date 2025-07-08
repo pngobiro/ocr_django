@@ -1,0 +1,174 @@
+<!-- ocr_app/templates/ocr_app/job_detail.html -->
+{% extends 'ocr_app/base.html' %}
+
+{% block title %}Job #{{ job.id }} - OCR to Word{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Job #{{ job.id }}</h4>
+                <div>
+                    <span class="badge status-badge 
+                        {% if job.status == 'completed' %}bg-success
+                        {% elif job.status == 'processing' %}bg-warning
+                        {% elif job.status == 'failed' %}bg-danger
+                        {% else %}bg-secondary{% endif %}">
+                        {{ job.get_status_display }}
+                    </span>
+                    {% if job.status == 'completed' and job.word_document %}
+                        <a href="{% url 'download_word_document' job.id %}" class="btn btn-sm btn-success ms-2">
+                            <i class="fas fa-download"></i> Download Word Doc
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Source Image</h6>
+                        <img src="{{ job.image.url }}" alt="OCR Image" class="img-fluid rounded mb-3">
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Job Information</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>{{ job.get_status_display }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Created:</strong></td>
+                                <td>{{ job.created_at|date:"M d, Y H:i:s" }}</td>
+                            </tr>
+                            {% if job.completed_at %}
+                            <tr>
+                                <td><strong>Completed:</strong></td>
+                                <td>{{ job.completed_at|date:"M d, Y H:i:s" }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td><strong>Text Items:</strong></td>
+                                <td>{{ job.results.count }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                {% if job.error_message %}
+                    <div class="alert alert-danger">
+                        <h6>Error Message:</h6>
+                        {{ job.error_message }}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if job.results.all %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Extracted Text</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Text</th>
+                                    <th>Confidence</th>
+                                    <th>Position</th>
+                                    <th>Size</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for result in job.results.all %}
+                                    <tr>
+                                        <td><code>{{ result.text }}</code></td>
+                                        <td>
+                                            <div class="progress" style="height: 20px;">
+                                                <div class="progress-bar" role="progressbar" 
+                                                     style="width: {{ result.confidence|floatformat:1|mul:100 }}%">
+                                                    {{ result.confidence|floatformat:3 }}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>{{ result.x1 }}, {{ result.y1 }}</td>
+                                        <td>{{ result.x3|add:result.x1|sub:result.x1 }} x {{ result.y3|add:result.y1|sub:result.y1 }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Actions</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{% url 'ocr_job_list' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-arrow-left"></i> Back to Jobs
+                    </a>
+                    
+                    {% if job.status == 'processing' %}
+                        <button class="btn btn-warning" id="refreshStatus">
+                            <i class="fas fa-sync"></i> Refresh Status
+                        </button>
+                    {% endif %}
+                    
+                    {% if job.status == 'completed' and job.word_document %}
+                        <a href="{% url 'download_word_document' job.id %}" class="btn btn-success">
+                            <i class="fas fa-download"></i> Download Word Document
+                        </a>
+                    {% endif %}
+                    
+                    <a href="{% url 'ocr_job_create' %}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> New OCR Job
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        {% if job.status == 'processing' %}
+            <div class="card mt-3">
+                <div class="card-body text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Processing OCR...</p>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if job.status == 'processing' %}
+<script>
+    function checkJobStatus() {
+        fetch(`/status/{{ job.id }}/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'processing') {
+                    location.reload();
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    }
+    
+    // Auto-refresh every 5 seconds if job is processing
+    setInterval(checkJobStatus, 5000);
+    
+    // Manual refresh button
+    document.getElementById('refreshStatus')?.addEventListener('click', function() {
+        checkJobStatus();
+    });
+</script>
+{% endif %}
+{% endblock %}

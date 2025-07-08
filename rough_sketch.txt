@@ -1,0 +1,676 @@
+<!-- ocr_app/templates/ocr_app/base.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}OCR to Word Converter{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .upload-area {
+            border: 2px dashed #007bff;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background-color: #f8f9fa;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            border-color: #0056b3;
+            background-color: #e9ecef;
+        }
+        .status-badge {
+            font-size: 0.9em;
+            padding: 5px 10px;
+        }
+        .job-card {
+            transition: transform 0.2s;
+        }
+        .job-card:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'ocr_job_list' %}">
+                <i class="fas fa-eye"></i> OCR to Word
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{% url 'ocr_job_create' %}">
+                    <i class="fas fa-upload"></i> Upload Image
+                </a>
+                <a class="nav-link" href="{% url 'ocr_job_list' %}">
+                    <i class="fas fa-list"></i> View Jobs
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}
+        {% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
+
+<!-- ocr_app/templates/ocr_app/upload.html -->
+{% extends 'ocr_app/base.html' %}
+
+{% block title %}Upload Image - OCR to Word{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-upload"></i> Upload Image for OCR Processing
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <div class="upload-area mb-3">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h5>Select an image file</h5>
+                        <p class="text-muted">Supported formats: JPG, PNG, GIF, BMP</p>
+                        {{ form.image }}
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-eye"></i> Process OCR
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-4">
+                    <h6>How it works:</h6>
+                    <ol class="text-muted">
+                        <li>Upload an image containing text</li>
+                        <li>NVIDIA's OCR service processes the image</li>
+                        <li>Text is extracted and formatted into a Word document</li>
+                        <li>Download your Word document with the extracted text</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!-- ocr_app/templates/ocr_app/job_list.html -->
+{% extends 'ocr_app/base.html' %}
+
+{% block title %}OCR Jobs - OCR to Word{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-list"></i> OCR Jobs</h2>
+    <a href="{% url 'ocr_job_create' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> New Job
+    </a>
+</div>
+
+{% if jobs %}
+    <div class="row">
+        {% for job in jobs %}
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card job-card h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <h6 class="card-title">Job #{{ job.id }}</h6>
+                            <span class="badge status-badge 
+                                {% if job.status == 'completed' %}bg-success
+                                {% elif job.status == 'processing' %}bg-warning
+                                {% elif job.status == 'failed' %}bg-danger
+                                {% else %}bg-secondary{% endif %}">
+                                {{ job.get_status_display }}
+                            </span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <img src="{{ job.image.url }}" alt="OCR Image" 
+                                 class="img-fluid rounded" style="max-height: 150px; width: 100%; object-fit: cover;">
+                        </div>
+                        
+                        <div class="text-muted small mb-3">
+                            <div><i class="fas fa-clock"></i> {{ job.created_at|date:"M d, Y H:i" }}</div>
+                            {% if job.completed_at %}
+                                <div><i class="fas fa-check"></i> {{ job.completed_at|date:"M d, Y H:i" }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'ocr_job_detail' job.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                            {% if job.status == 'completed' and job.word_document %}
+                                <a href="{% url 'download_word_document' job.id %}" class="btn btn-sm btn-success">
+                                    <i class="fas fa-download"></i> Download
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center py-5">
+        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+        <h4>No OCR jobs yet</h4>
+        <p class="text-muted">Upload an image to get started</p>
+        <a href="{% url 'ocr_job_create' %}" class="btn btn-primary">
+            <i class="fas fa-upload"></i> Upload Image
+        </a>
+    </div>
+{% endif %}
+{% endblock %}
+
+<!-- ocr_app/templates/ocr_app/job_detail.html -->
+{% extends 'ocr_app/base.html' %}
+
+{% block title %}Job #{{ job.id }} - OCR to Word{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Job #{{ job.id }}</h4>
+                <div>
+                    <span class="badge status-badge 
+                        {% if job.status == 'completed' %}bg-success
+                        {% elif job.status == 'processing' %}bg-warning
+                        {% elif job.status == 'failed' %}bg-danger
+                        {% else %}bg-secondary{% endif %}">
+                        {{ job.get_status_display }}
+                    </span>
+                    {% if job.status == 'completed' and job.word_document %}
+                        <a href="{% url 'download_word_document' job.id %}" class="btn btn-sm btn-success ms-2">
+                            <i class="fas fa-download"></i> Download Word Doc
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Source Image</h6>
+                        <img src="{{ job.image.url }}" alt="OCR Image" class="img-fluid rounded mb-3">
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Job Information</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>{{ job.get_status_display }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Created:</strong></td>
+                                <td>{{ job.created_at|date:"M d, Y H:i:s" }}</td>
+                            </tr>
+                            {% if job.completed_at %}
+                            <tr>
+                                <td><strong>Completed:</strong></td>
+                                <td>{{ job.completed_at|date:"M d, Y H:i:s" }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td><strong>Text Items:</strong></td>
+                                <td>{{ job.results.count }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                {% if job.error_message %}
+                    <div class="alert alert-danger">
+                        <h6>Error Message:</h6>
+                        {{ job.error_message }}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if job.results.all %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Extracted Text</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Text</th>
+                                    <th>Confidence</th>
+                                    <th>Position</th>
+                                    <th>Size</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for result in job.results.all %}
+                                    <tr>
+                                        <td><code>{{ result.text }}</code></td>
+                                        <td>
+                                            <div class="progress" style="height: 20px;">
+                                                <div class="progress-bar" role="progressbar" 
+                                                     style="width: {{ result.confidence|floatformat:1|mul:100 }}%">
+                                                    {{ result.confidence|floatformat:3 }}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>{{ result.x1 }}, {{ result.y1 }}</td>
+                                        <td>{{ result.x3|add:result.x1|sub:result.x1 }} x {{ result.y3|add:result.y1|sub:result.y1 }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Actions</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{% url 'ocr_job_list' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-arrow-left"></i> Back to Jobs
+                    </a>
+                    
+                    {% if job.status == 'processing' %}
+                        <button class="btn btn-warning" id="refreshStatus">
+                            <i class="fas fa-sync"></i> Refresh Status
+                        </button>
+                    {% endif %}
+                    
+                    {% if job.status == 'completed' and job.word_document %}
+                        <a href="{% url 'download_word_document' job.id %}" class="btn btn-success">
+                            <i class="fas fa-download"></i> Download Word Document
+                        </a>
+                    {% endif %}
+                    
+                    <a href="{% url 'ocr_job_create' %}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> New OCR Job
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        {% if job.status == 'processing' %}
+            <div class="card mt-3">
+                <div class="card-body text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Processing OCR...</p>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if job.status == 'processing' %}
+<script>
+    function checkJobStatus() {
+        fetch(`/status/{{ job.id }}/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'processing') {
+                    location.reload();
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    }
+    
+    // Auto-refresh every 5 seconds if job is processing
+    setInterval(checkJobStatus, 5000);
+    
+    // Manual refresh button
+    document.getElementById('refreshStatus')?.addEventListener('click', function() {
+        checkJobStatus();
+    });
+</script>
+{% endif %}
+{% endblock %}
+
+# ocr_app/admin.py
+from django.contrib import admin
+from django.utils.html import format_html
+from .models import OCRJob, OCRResult
+
+@admin.register(OCRJob)
+class OCRJobAdmin(admin.ModelAdmin):
+    list_display = ('id', 'image_preview', 'status', 'created_at', 'completed_at', 'results_count')
+    list_filter = ('status', 'created_at')
+    search_fields = ('id', 'error_message')
+    readonly_fields = ('created_at', 'completed_at', 'image_preview')
+    
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" style="max-height: 50px; max-width: 100px;" />', obj.image.url)
+        return "No image"
+    image_preview.short_description = 'Image'
+    
+    def results_count(self, obj):
+        return obj.results.count()
+    results_count.short_description = 'Text Items'
+
+@admin.register(OCRResult)
+class OCRResultAdmin(admin.ModelAdmin):
+    list_display = ('id', 'job', 'text_preview', 'confidence', 'position')
+    list_filter = ('job__status', 'confidence')
+    search_fields = ('text', 'job__id')
+    
+    def text_preview(self, obj):
+        return obj.text[:50] + "..." if len(obj.text) > 50 else obj.text
+    text_preview.short_description = 'Text'
+    
+    def position(self, obj):
+        return f"({obj.x1}, {obj.y1})"
+    position.short_description = 'Position'
+
+# ocr_app/management/commands/process_pending_ocr.py
+import os
+import sys
+from django.core.management.base import BaseCommand
+from django.conf import settings
+from ocr_app.models import OCRJob
+from ocr_app.services import process_ocr_job
+
+class Command(BaseCommand):
+    help = 'Process pending OCR jobs'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--job-id',
+            type=int,
+            help='Process specific job ID',
+        )
+        parser.add_argument(
+            '--max-jobs',
+            type=int,
+            default=10,
+            help='Maximum number of jobs to process',
+        )
+    
+    def handle(self, *args, **options):
+        if not settings.NVIDIA_API_KEY:
+            self.stdout.write(
+                self.style.ERROR('NVIDIA API key not configured. Please set NGC_PERSONAL_API_KEY environment variable.')
+            )
+            return
+        
+        if options['job_id']:
+            # Process specific job
+            try:
+                job = OCRJob.objects.get(id=options['job_id'])
+                self.stdout.write(f'Processing job {job.id}...')
+                process_ocr_job(job.id)
+                self.stdout.write(
+                    self.style.SUCCESS(f'Successfully processed job {job.id}')
+                )
+            except OCRJob.DoesNotExist:
+                self.stdout.write(
+                    self.style.ERROR(f'Job {options["job_id"]} not found')
+                )
+            except Exception as e:
+                self.stdout.write(
+                    self.style.ERROR(f'Error processing job {options["job_id"]}: {str(e)}')
+                )
+        else:
+            # Process pending jobs
+            pending_jobs = OCRJob.objects.filter(status='pending')[:options['max_jobs']]
+            
+            if not pending_jobs:
+                self.stdout.write('No pending jobs to process.')
+                return
+            
+            self.stdout.write(f'Found {len(pending_jobs)} pending jobs to process.')
+            
+            for job in pending_jobs:
+                try:
+                    self.stdout.write(f'Processing job {job.id}...')
+                    process_ocr_job(job.id)
+                    self.stdout.write(
+                        self.style.SUCCESS(f'Successfully processed job {job.id}')
+                    )
+                except Exception as e:
+                    self.stdout.write(
+                        self.style.ERROR(f'Error processing job {job.id}: {str(e)}')
+                    )
+
+# ocr_app/management/commands/cleanup_old_jobs.py
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+from datetime import timedelta
+from ocr_app.models import OCRJob
+
+class Command(BaseCommand):
+    help = 'Clean up old OCR jobs and their files'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--days',
+            type=int,
+            default=30,
+            help='Delete jobs older than this many days',
+        )
+        parser.add_argument(
+            '--dry-run',
+            action='store_true',
+            help='Show what would be deleted without actually deleting',
+        )
+    
+    def handle(self, *args, **options):
+        cutoff_date = timezone.now() - timedelta(days=options['days'])
+        old_jobs = OCRJob.objects.filter(created_at__lt=cutoff_date)
+        
+        if not old_jobs.exists():
+            self.stdout.write('No old jobs to clean up.')
+            return
+        
+        self.stdout.write(f'Found {old_jobs.count()} jobs older than {options["days"]} days.')
+        
+        if options['dry_run']:
+            self.stdout.write('DRY RUN - Would delete:')
+            for job in old_jobs:
+                self.stdout.write(f'  - Job {job.id} (created: {job.created_at})')
+        else:
+            deleted_count = 0
+            for job in old_jobs:
+                try:
+                    # Delete associated files
+                    if job.image:
+                        job.image.delete()
+                    if job.word_document:
+                        job.word_document.delete()
+                    
+                    job.delete()
+                    deleted_count += 1
+                except Exception as e:
+                    self.stdout.write(
+                        self.style.ERROR(f'Error deleting job {job.id}: {str(e)}')
+                    )
+            
+            self.stdout.write(
+                self.style.SUCCESS(f'Successfully deleted {deleted_count} old jobs.')
+            )
+
+# ocr_app/management/commands/test_nvidia_api.py
+import os
+import requests
+from django.core.management.base import BaseCommand
+from django.conf import settings
+
+class Command(BaseCommand):
+    help = 'Test NVIDIA API connection'
+    
+    def handle(self, *args, **options):
+        api_key = settings.NVIDIA_API_KEY
+        
+        if not api_key:
+            self.stdout.write(
+                self.style.ERROR('NVIDIA API key not configured. Please set NGC_PERSONAL_API_KEY environment variable.')
+            )
+            return
+        
+        # Test assets endpoint
+        try:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "accept": "application/json",
+            }
+            
+            self.stdout.write('Testing NVIDIA API connection...')
+            
+            # Test with a simple request to the assets endpoint
+            response = requests.get(
+                "https://api.nvcf.nvidia.com/v2/nvcf/assets",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                self.stdout.write(
+                    self.style.SUCCESS('✓ NVIDIA API connection successful!')
+                )
+            else:
+                self.stdout.write(
+                    self.style.ERROR(f'✗ API returned status code: {response.status_code}')
+                )
+                self.stdout.write(f'Response: {response.text}')
+                
+        except requests.exceptions.RequestException as e:
+            self.stdout.write(
+                self.style.ERROR(f'✗ Connection error: {str(e)}')
+            )
+        except Exception as e:
+            self.stdout.write(
+                self.style.ERROR(f'✗ Unexpected error: {str(e)}')
+            )
+
+# Installation and Setup Instructions
+"""
+# Django OCR to Word Application Setup
+
+## 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+## 2. Environment Variables
+Create a `.env` file in your project root:
+```
+NGC_PERSONAL_API_KEY=your_nvidia_api_key_here
+SECRET_KEY=your_django_secret_key_here
+DEBUG=True
+```
+
+## 3. Database Setup
+```bash
+python manage.py makemigrations
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+## 4. Create Directory Structure
+```
+ocr_project/
+├── ocr_project/
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── ocr_app/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── forms.py
+│   ├── models.py
+│   ├── services.py
+│   ├── urls.py
+│   ├── views.py
+│   ├── templates/
+│   │   └── ocr_app/
+│   │       ├── base.html
+│   │       ├── upload.html
+│   │       ├── job_list.html
+│   │       └── job_detail.html
+│   └── management/
+│       └── commands/
+│           ├── __init__.py
+│           ├── process_pending_ocr.py
+│           ├── cleanup_old_jobs.py
+│           └── test_nvidia_api.py
+├── media/
+│   ├── ocr_images/
+│   └── ocr_results/
+└── manage.py
+```
+
+## 5. Test API Connection
+```bash
+python manage.py test_nvidia_api
+```
+
+## 6. Run the Application
+```bash
+python manage.py runserver
+```
+
+## 7. Usage
+1. Navigate to http://localhost:8000
+2. Upload an image with text
+3. Wait for processing to complete
+4. Download the generated Word document
+
+## 8. Management Commands
+```bash
+# Process pending OCR jobs manually
+python manage.py process_pending_ocr
+
+# Clean up old jobs
+python manage.py cleanup_old_jobs --days 30
+
+# Test NVIDIA API connection
+python manage.py test_nvidia_api
+```
+
+## Features:
+- ✅ Django web interface for image uploads
+- ✅ NVIDIA OCR API integration
+- ✅ Automatic Word document generation
+- ✅ Background processing with status tracking
+- ✅ Admin interface for job management
+- ✅ Bootstrap UI with responsive design
+- ✅ File management and cleanup
+- ✅ Error handling and logging
+- ✅ Real-time status updates via AJAX
+"""
