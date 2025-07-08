@@ -6,37 +6,40 @@ from django.conf import settings
 from ocr_app.models import OCRJob
 from ocr_app.services import process_ocr_job
 
+
 class Command(BaseCommand):
-    help = 'Process pending OCR jobs'
-    
+    help = "Process pending OCR jobs"
+
     def add_arguments(self, parser):
         parser.add_argument(
-            '--job-id',
+            "--job-id",
             type=int,
-            help='Process specific job ID',
+            help="Process specific job ID",
         )
         parser.add_argument(
-            '--max-jobs',
+            "--max-jobs",
             type=int,
             default=10,
-            help='Maximum number of jobs to process',
+            help="Maximum number of jobs to process",
         )
-    
+
     def handle(self, *args, **options):
         if not settings.NVIDIA_API_KEY:
             self.stdout.write(
-                self.style.ERROR('NVIDIA API key not configured. Please set NGC_PERSONAL_API_KEY environment variable.')
+                self.style.ERROR(
+                    "NVIDIA API key not configured. Please set NGC_PERSONAL_API_KEY environment variable."
+                )
             )
             return
-        
-        if options['job_id']:
+
+        if options["job_id"]:
             # Process specific job
             try:
-                job = OCRJob.objects.get(id=options['job_id'])
-                self.stdout.write(f'Processing job {job.id}...')
+                job = OCRJob.objects.get(id=options["job_id"])
+                self.stdout.write(f"Processing job {job.id}...")
                 process_ocr_job(job.id)
                 self.stdout.write(
-                    self.style.SUCCESS(f'Successfully processed job {job.id}')
+                    self.style.SUCCESS(f"Successfully processed job {job.id}")
                 )
             except OCRJob.DoesNotExist:
                 self.stdout.write(
@@ -44,26 +47,30 @@ class Command(BaseCommand):
                 )
             except Exception as e:
                 self.stdout.write(
-                    self.style.ERROR(f'Error processing job {options["job_id"]}: {str(e)}')
+                    self.style.ERROR(
+                        f'Error processing job {options["job_id"]}: {str(e)}'
+                    )
                 )
         else:
             # Process pending jobs
-            pending_jobs = OCRJob.objects.filter(status='pending')[:options['max_jobs']]
-            
+            pending_jobs = OCRJob.objects.filter(status="pending")[
+                : options["max_jobs"]
+            ]
+
             if not pending_jobs:
-                self.stdout.write('No pending jobs to process.')
+                self.stdout.write("No pending jobs to process.")
                 return
-            
-            self.stdout.write(f'Found {len(pending_jobs)} pending jobs to process.')
-            
+
+            self.stdout.write(f"Found {len(pending_jobs)} pending jobs to process.")
+
             for job in pending_jobs:
                 try:
-                    self.stdout.write(f'Processing job {job.id}...')
+                    self.stdout.write(f"Processing job {job.id}...")
                     process_ocr_job(job.id)
                     self.stdout.write(
-                        self.style.SUCCESS(f'Successfully processed job {job.id}')
+                        self.style.SUCCESS(f"Successfully processed job {job.id}")
                     )
                 except Exception as e:
                     self.stdout.write(
-                        self.style.ERROR(f'Error processing job {job.id}: {str(e)}')
+                        self.style.ERROR(f"Error processing job {job.id}: {str(e)}")
                     )
