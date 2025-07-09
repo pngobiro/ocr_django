@@ -99,7 +99,7 @@ def process_ocr_job(job_id):
 
 def perform_nvidia_ocr(image_path):
     """
-    Perform OCR using NVIDIA's OCDRNet API - exactly as per working example.
+    Perform OCR using NVIDIA's OCDRNet API - exactly as per working test command.
     
     Args:
         image_path (str): Path to the image file.
@@ -107,6 +107,10 @@ def perform_nvidia_ocr(image_path):
     Returns:
         list: List of OCR results.
     """
+    import uuid
+    import zipfile
+    import tempfile
+    
     api_key = settings.NVIDIA_API_KEY
     
     if not api_key:
@@ -138,54 +142,68 @@ def perform_nvidia_ocr(image_path):
     if response.status_code != 200:
         raise Exception(f"NVIDIA API returned status code {response.status_code}: {response.text}")
     
-    # Parse JSON response directly - as per your working Python code
+    # Handle ZIP response exactly as in the working test command
     try:
-        response_data = response.json()
+        # Create temporary files for the zip and extraction
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_zip:
+            temp_zip.write(response.content)
+            temp_zip_path = temp_zip.name
+        
+        # Create temporary directory for extraction
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Extract the zip file
+            with zipfile.ZipFile(temp_zip_path, 'r') as z:
+                z.extractall(temp_dir)
+            
+            # Find and read the .response file
+            response_file = None
+            for filename in os.listdir(temp_dir):
+                if filename.endswith('.response'):
+                    response_file = os.path.join(temp_dir, filename)
+                    break
+            
+            if not response_file:
+                raise Exception("No .response file found in the OCR result")
+            
+            # Read and parse the JSON response
+            with open(response_file, 'r') as f:
+                response_data = json.load(f)
+        
+        # Clean up temp zip file
+        os.unlink(temp_zip_path)
+        
         ocr_results = []
         
-        # Process the response based on the actual format
-        if 'data' in response_data:
-            for item in response_data['data']:
-                if 'object' in item and item['object'] == 'text_detection':
-                    text = item.get('text', '').strip()
-                    confidence = item.get('confidence', 0.0)
-                    bbox = item.get('bbox', {})
-                    
-                    if text:  # Only add non-empty text
-                        result = {
-                            'text': text,
-                            'confidence': float(confidence),
-                            'vertices': format_bbox_to_vertices(bbox)
-                        }
-                        ocr_results.append(result)
-        
-        # Alternative format handling
-        elif 'predictions' in response_data:
-            for prediction in response_data['predictions']:
-                text = prediction.get('text', '').strip()
-                confidence = prediction.get('confidence', 0.0)
-                bbox = prediction.get('bbox', prediction.get('box', {}))
-                
-                if text:
-                    result = {
-                        'text': text,
-                        'confidence': float(confidence),
-                        'vertices': format_bbox_to_vertices(bbox)
-                    }
-                    ocr_results.append(result)
-        
-        # If direct format
-        elif isinstance(response_data, list):
-            for item in response_data:
-                text = item.get('text', '').strip()
+        # The response format from our test has 'metadata' array with label, polygon, confidence
+        if 'metadata' in response_data:
+            for item in response_data['metadata']:
+                text = item.get('label', '').strip()
                 confidence = item.get('confidence', 0.0)
-                bbox = item.get('bbox', item.get('box', {}))
+                polygon = item.get('polygon', {})
                 
-                if text:
+                if text:  # Only add non-empty text
+                    # Convert polygon format {x1, y1, x2, y2, x3, y3, x4, y4} to vertices
+                    vertices = []
+                    if polygon:
+                        vertices = [
+                            {'x': int(polygon.get('x1', 0)), 'y': int(polygon.get('y1', 0))},
+                            {'x': int(polygon.get('x2', 0)), 'y': int(polygon.get('y2', 0))},
+                            {'x': int(polygon.get('x3', 0)), 'y': int(polygon.get('y3', 0))},
+                            {'x': int(polygon.get('x4', 0)), 'y': int(polygon.get('y4', 0))}
+                        ]
+                    else:
+                        # Default fallback
+                        vertices = [
+                            {'x': 0, 'y': 0},
+                            {'x': 100, 'y': 0},
+                            {'x': 100, 'y': 20},
+                            {'x': 0, 'y': 20}
+                        ]
+                    
                     result = {
                         'text': text,
                         'confidence': float(confidence),
-                        'vertices': format_bbox_to_vertices(bbox)
+                        'vertices': vertices
                     }
                     ocr_results.append(result)
         
