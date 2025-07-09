@@ -48,6 +48,19 @@
                                 <a href="{% url 'download_word_document' job.id %}" class="btn btn-sm btn-success">
                                     <i class="fas fa-download"></i> Download
                                 </a>
+                            {% elif job.status == 'failed' %}
+                                {% if job.can_retry %}
+                                    <form method="post" action="{% url 'retry_job' job.pk %}" style="display: inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-warning" onclick="return confirm('Are you sure you want to retry this job?')">
+                                            <i class="fas fa-redo"></i> Retry
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <span class="btn btn-sm btn-outline-secondary disabled">
+                                        <i class="fas fa-exclamation-triangle"></i> Max retries
+                                    </span>
+                                {% endif %}
                             {% endif %}
                         </div>
                     </div>

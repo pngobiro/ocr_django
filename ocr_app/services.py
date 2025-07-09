@@ -1,10 +1,7 @@
 # ocr_app/services.py
 import os
 import requests
-import io
 import json
-import tempfile
-import base64
 from datetime import datetime
 from PIL import Image
 from docx import Document
@@ -13,6 +10,47 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from django.utils import timezone
 from django.conf import settings
 from .models import OCRJob, OCRResult
+
+def _upload_asset(input_data, description):
+    """
+    Uploads an asset to the NVCF API - exactly as per working example.
+    :param input_data: The binary asset to upload
+    :param description: A description of the asset
+    """
+    api_key = settings.NVIDIA_API_KEY
+    if not api_key:
+        raise ValueError("NVIDIA API key not configured")
+        
+    assets_url = "https://api.nvcf.nvidia.com/v2/nvcf/assets"
+    header_auth = f"Bearer {api_key}"
+
+    headers = {
+        "Authorization": header_auth,
+        "Content-Type": "application/json",
+        "accept": "application/json",
+    }
+
+    s3_headers = {
+        "x-amz-meta-nvcf-asset-description": description,
+        "content-type": "image/jpeg",
+    }
+
+    payload = {"contentType": "image/jpeg", "description": description}
+
+    response = requests.post(assets_url, headers=headers, json=payload, timeout=30)
+    response.raise_for_status()
+
+    asset_url = response.json()["uploadUrl"]
+    asset_id = response.json()["assetId"]
+
+    response = requests.put(
+        asset_url,
+        data=input_data,
+        headers=s3_headers,
+        timeout=300,
+    )
+    response.raise_for_status()
+    return asset_id
 
 def process_ocr_job(job_id):
     """
@@ -61,7 +99,7 @@ def process_ocr_job(job_id):
 
 def perform_nvidia_ocr(image_path):
     """
-    Perform OCR using NVIDIA's API.
+    Perform OCR using NVIDIA's OCDRNet API - exactly as per working example.
     
     Args:
         image_path (str): Path to the image file.
@@ -74,45 +112,158 @@ def perform_nvidia_ocr(image_path):
     if not api_key:
         raise ValueError("NVIDIA API key not configured")
     
-    # Prepare the image
+    # NVAI endpoint for the ocdrnet NIM - exact from working code
+    nvai_url = "https://ai.api.nvidia.com/v1/cv/nvidia/ocdrnet"
+    header_auth = f"Bearer {api_key}"
+    
+    # Upload the asset - exactly as in working code
     with open(image_path, "rb") as image_file:
-        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        asset_id = _upload_asset(image_file.read(), "Input Image")
     
-    # API endpoint
-    url = "https://api.nvcf.nvidia.com/v2/nvcf/pexec/functions/ocr"
+    # Prepare the request - exactly as in working code
+    inputs = {"image": f"{asset_id}", "render_label": False}
+    asset_list = f"{asset_id}"
     
-    # Headers
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "Accept": "application/json"
+        "NVCF-INPUT-ASSET-REFERENCES": asset_list,
+        "NVCF-FUNCTION-ASSET-IDS": asset_list,
+        "Authorization": header_auth,
     }
     
-    # Request payload
-    payload = {
-        "data": [
-            {
-                "image": encoded_image,
-                "min_confidence": 0.3  # Minimum confidence threshold
-            }
-        ]
-    }
-    
-    # Send request
-    response = requests.post(url, headers=headers, json=payload)
+    # Send request to NVIDIA OCR API - exactly as in working code
+    response = requests.post(nvai_url, headers=headers, json=inputs)
     
     # Check for errors
     if response.status_code != 200:
         raise Exception(f"NVIDIA API returned status code {response.status_code}: {response.text}")
     
-    # Parse response
-    result = response.json()
-    
-    # Extract text boxes
+    # Parse JSON response directly - as per your working Python code
     try:
-        return result['results'][0]['boxes']
-    except (KeyError, IndexError):
-        raise Exception("Unexpected response format from NVIDIA API")
+        response_data = response.json()
+        ocr_results = []
+        
+        # Process the response based on the actual format
+        if 'data' in response_data:
+            for item in response_data['data']:
+                if 'object' in item and item['object'] == 'text_detection':
+                    text = item.get('text', '').strip()
+                    confidence = item.get('confidence', 0.0)
+                    bbox = item.get('bbox', {})
+                    
+                    if text:  # Only add non-empty text
+                        result = {
+                            'text': text,
+                            'confidence': float(confidence),
+                            'vertices': format_bbox_to_vertices(bbox)
+                        }
+                        ocr_results.append(result)
+        
+        # Alternative format handling
+        elif 'predictions' in response_data:
+            for prediction in response_data['predictions']:
+                text = prediction.get('text', '').strip()
+                confidence = prediction.get('confidence', 0.0)
+                bbox = prediction.get('bbox', prediction.get('box', {}))
+                
+                if text:
+                    result = {
+                        'text': text,
+                        'confidence': float(confidence),
+                        'vertices': format_bbox_to_vertices(bbox)
+                    }
+                    ocr_results.append(result)
+        
+        # If direct format
+        elif isinstance(response_data, list):
+            for item in response_data:
+                text = item.get('text', '').strip()
+                confidence = item.get('confidence', 0.0)
+                bbox = item.get('bbox', item.get('box', {}))
+                
+                if text:
+                    result = {
+                        'text': text,
+                        'confidence': float(confidence),
+                        'vertices': format_bbox_to_vertices(bbox)
+                    }
+                    ocr_results.append(result)
+        
+        return ocr_results
+        
+    except json.JSONDecodeError as e:
+        raise Exception(f"Failed to parse JSON response: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Error processing OCR response: {str(e)}")
+
+def format_bbox_to_vertices(bbox):
+    """
+    Convert bounding box to vertices format for OCR results.
+    
+    Args:
+        bbox (dict): Bounding box coordinates
+        
+    Returns:
+        list: List of vertex coordinates
+    """
+    if not bbox:
+        # Default fallback
+        return [
+            {'x': 0, 'y': 0},
+            {'x': 100, 'y': 0},
+            {'x': 100, 'y': 20},
+            {'x': 0, 'y': 20}
+        ]
+    
+    # Handle different bbox formats
+    if 'x' in bbox and 'y' in bbox and 'width' in bbox and 'height' in bbox:
+        # Format: {x, y, width, height}
+        x, y, w, h = bbox['x'], bbox['y'], bbox['width'], bbox['height']
+        return [
+            {'x': int(x), 'y': int(y)},
+            {'x': int(x + w), 'y': int(y)},
+            {'x': int(x + w), 'y': int(y + h)},
+            {'x': int(x), 'y': int(y + h)}
+        ]
+    elif 'x1' in bbox and 'y1' in bbox and 'x2' in bbox and 'y2' in bbox:
+        # Format: {x1, y1, x2, y2}
+        x1, y1, x2, y2 = bbox['x1'], bbox['y1'], bbox['x2'], bbox['y2']
+        return [
+            {'x': int(x1), 'y': int(y1)},
+            {'x': int(x2), 'y': int(y1)},
+            {'x': int(x2), 'y': int(y2)},
+            {'x': int(x1), 'y': int(y2)}
+        ]
+    elif isinstance(bbox, list) and len(bbox) >= 4:
+        # Format: [x1, y1, x2, y2]
+        x1, y1, x2, y2 = bbox[:4]
+        return [
+            {'x': int(x1), 'y': int(y1)},
+            {'x': int(x2), 'y': int(y1)},
+            {'x': int(x2), 'y': int(y2)},
+            {'x': int(x1), 'y': int(y2)}
+        ]
+    
+    # Default fallback
+    return [
+        {'x': 0, 'y': 0},
+        {'x': 100, 'y': 0},
+        {'x': 100, 'y': 20},
+        {'x': 0, 'y': 20}
+    ]
+
+def extract_text_from_json(data):
+    """
+    This function is kept for compatibility but is no longer used.
+    The new implementation directly parses JSON in perform_nvidia_ocr.
+    """
+    return []
+def format_coordinates(coords):
+    """
+    Format coordinates to the expected vertex format.
+    This function is kept for compatibility but format_bbox_to_vertices is preferred.
+    """
+    return format_bbox_to_vertices(coords)
 
 def create_ocr_results(job, ocr_results):
     """

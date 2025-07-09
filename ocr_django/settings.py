@@ -13,6 +13,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from django.utils.translation import gettext_lazy as _
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -129,7 +133,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # NVIDIA API settings
-NVIDIA_API_KEY = os.environ.get('NGC_PERSONAL_API_KEY', '')
+NVIDIA_API_KEY = os.environ.get('NGC_PERSONAL_API_KEY')
 
 # Job processing settings
 PROCESS_JOBS_ASYNC = True

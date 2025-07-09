@@ -8,4 +8,5 @@ urlpatterns = [
     path('job/<int:pk>/', views.OCRJobDetailView.as_view(), name='ocr_job_detail'),
     path('download/<int:pk>/', views.download_word_document, name='download_word_document'),
     path('status/<int:pk>/', views.check_job_status, name='check_job_status'),
+    path('retry/<int:pk>/', views.retry_job, name='retry_job'),
 ]

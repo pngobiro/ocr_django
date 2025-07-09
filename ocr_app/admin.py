@@ -10,14 +10,16 @@ class OCRJobAdmin(admin.ModelAdmin):
         "id",
         "image_preview",
         "status",
+        "retry_info",
         "created_at",
         "completed_at",
         "results_count",
     )
-    list_filter = ("status", "created_at")
+    list_filter = ("status", "created_at", "retry_count")
     search_fields = ("id", "error_message")
-    readonly_fields = ("created_at", "completed_at", "image_preview")
-
+    readonly_fields = ("created_at", "completed_at", "image_preview", "retry_count", "last_retry_at")
+    actions = ['retry_failed_jobs']
+    
     def image_preview(self, obj):
         if obj.image:
             return format_html(
@@ -32,6 +34,32 @@ class OCRJobAdmin(admin.ModelAdmin):
         return obj.results.count()
 
     results_count.short_description = "Text Items"
+    
+    def retry_info(self, obj):
+        if obj.retry_count > 0:
+            return format_html(
+                '<span class="text-warning">{}💸/3</span>',
+                obj.retry_count
+            )
+        return "-"
+    retry_info.short_description = "Retries"
+
+    def retry_failed_jobs(self, request, queryset):
+        """Admin action to retry failed jobs."""
+        retried_count = 0
+        for job in queryset.filter(status=OCRJob.Status.FAILED):
+            if job.can_retry():
+                if job.retry_job():
+                    from .services import process_ocr_job
+                    import threading
+                    thread = threading.Thread(target=process_ocr_job, args=(job.id,))
+                    thread.daemon = True
+                    thread.start()
+                    retried_count += 1
+        
+        self.message_user(request, f'Successfully queued {retried_count} jobs for retry.')
+    
+    retry_failed_jobs.short_description = "Retry selected failed jobs"
 
 
 @admin.register(OCRResult)

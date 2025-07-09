@@ -48,6 +48,14 @@ class OCRJob(models.Model):
                                     blank=True,
                                     verbose_name=_("Word document"))
     
+    retry_count = models.IntegerField(default=0,
+                                     verbose_name=_("Retry count"),
+                                     help_text=_("Number of times this job has been retried"))
+    
+    last_retry_at = models.DateTimeField(null=True,
+                                        blank=True,
+                                        verbose_name=_("Last retry at"))
+    
     class Meta:
         ordering = ['-created_at']
         verbose_name = _("OCR Job")
@@ -67,6 +75,22 @@ class OCRJob(models.Model):
                 os.remove(self.word_document.path)
         
         super().delete(*args, **kwargs)
+    
+    def can_retry(self):
+        """Check if the job can be retried."""
+        return self.status == self.Status.FAILED and self.retry_count < 3
+    
+    def retry_job(self):
+        """Reset the job for retry."""
+        if self.can_retry():
+            from django.utils import timezone
+            self.status = self.Status.PENDING
+            self.error_message = None
+            self.retry_count += 1
+            self.last_retry_at = timezone.now()
+            self.save()
+            return True
+        return False
 
 class OCRResult(models.Model):
     """Model representing a single text item detected by OCR."""

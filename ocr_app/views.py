@@ -85,3 +85,29 @@ def check_job_status(request, pk):
         })
     except OCRJob.DoesNotExist:
         return JsonResponse({'error': 'Job not found'}, status=404)
+
+def retry_job(request, pk):
+    """View for retrying a failed OCR job."""
+    job = get_object_or_404(OCRJob, pk=pk)
+    
+    if request.method == 'POST':
+        if job.can_retry():
+            if job.retry_job():
+                # Start OCR processing in a background thread
+                if settings.PROCESS_JOBS_ASYNC:
+                    thread = threading.Thread(target=process_ocr_job, args=(job.id,))
+                    thread.daemon = True
+                    thread.start()
+                else:
+                    process_ocr_job(job.id)
+                
+                messages.success(request, f'Job #{job.id} has been queued for retry. Processing...')
+            else:
+                messages.error(request, f'Unable to retry job #{job.id}.')
+        else:
+            if job.status != OCRJob.Status.FAILED:
+                messages.error(request, f'Job #{job.id} is not in a failed state.')
+            else:
+                messages.error(request, f'Job #{job.id} has exceeded the maximum retry limit (3).')
+    
+    return redirect('ocr_job_detail', pk=pk)

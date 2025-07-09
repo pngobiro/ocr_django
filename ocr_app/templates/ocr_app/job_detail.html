@@ -1,5 +1,6 @@
 <!-- ocr_app/templates/ocr_app/job_detail.html -->
 {% extends 'ocr_app/base.html' %}
+{% load ocr_filters %}
 
 {% block title %}Job #{{ job.id }} - OCR to Word{% endblock %}
 
@@ -51,14 +52,45 @@
                                 <td><strong>Text Items:</strong></td>
                                 <td>{{ job.results.count }}</td>
                             </tr>
+                            {% if job.retry_count > 0 %}
+                            <tr>
+                                <td><strong>Retry Count:</strong></td>
+                                <td>{{ job.retry_count }}/3</td>
+                            </tr>
+                            {% endif %}
+                            {% if job.last_retry_at %}
+                            <tr>
+                                <td><strong>Last Retry:</strong></td>
+                                <td>{{ job.last_retry_at|date:"M d, Y H:i:s" }}</td>
+                            </tr>
+                            {% endif %}
                         </table>
                     </div>
                 </div>
                 
                 {% if job.error_message %}
                     <div class="alert alert-danger">
-                        <h6>Error Message:</h6>
+                        <h6><i class="fas fa-exclamation-triangle"></i> Error Message:</h6>
                         {{ job.error_message }}
+                        {% if job.status == 'failed' %}
+                            <hr>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    Retry attempts: {{ job.retry_count }}/3
+                                    {% if job.last_retry_at %}
+                                        | Last retry: {{ job.last_retry_at|date:"M d, Y H:i" }}
+                                    {% endif %}
+                                </small>
+                                {% if job.can_retry %}
+                                    <form method="post" action="{% url 'retry_job' job.pk %}" style="display: inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-warning" onclick="return confirm('Are you sure you want to retry this job?')">
+                                            <i class="fas fa-redo"></i> Retry Now
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        {% endif %}
                     </div>
                 {% endif %}
             </div>
@@ -87,13 +119,13 @@
                                         <td>
                                             <div class="progress" style="height: 20px;">
                                                 <div class="progress-bar" role="progressbar" 
-                                                     style="width: {{ result.confidence|floatformat:1|mul:100 }}%">
+                                                     style="width: {{ result.confidence|percentage }}%">
                                                     {{ result.confidence|floatformat:3 }}
                                                 </div>
                                             </div>
                                         </td>
                                         <td>{{ result.x1 }}, {{ result.y1 }}</td>
-                                        <td>{{ result.x3|add:result.x1|sub:result.x1 }} x {{ result.y3|add:result.y1|sub:result.y1 }}</td>
+                                        <td>{{ result.x3|subtract:result.x1|floatformat:0 }} x {{ result.y3|subtract:result.y1|floatformat:0 }}</td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -125,6 +157,21 @@
                         <a href="{% url 'download_word_document' job.id %}" class="btn btn-success">
                             <i class="fas fa-download"></i> Download Word Document
                         </a>
+                    {% endif %}
+                    
+                    {% if job.status == 'failed' %}
+                        {% if job.can_retry %}
+                            <form method="post" action="{% url 'retry_job' job.pk %}" style="display: inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-warning" onclick="return confirm('Are you sure you want to retry this job?')">
+                                    <i class="fas fa-redo"></i> Retry Job
+                                </button>
+                            </form>
+                        {% else %}
+                            <button class="btn btn-outline-secondary" disabled>
+                                <i class="fas fa-exclamation-triangle"></i> Max Retries Reached
+                            </button>
+                        {% endif %}
                     {% endif %}
                     
                     <a href="{% url 'ocr_job_create' %}" class="btn btn-primary">
