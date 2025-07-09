@@ -56,6 +56,26 @@ class OCRJob(models.Model):
                                         blank=True,
                                         verbose_name=_("Last retry at"))
     
+    # OCR processing metadata
+    processing_time = models.FloatField(null=True, 
+                                      blank=True,
+                                      verbose_name=_("Processing time (seconds)"))
+    
+    total_text_items = models.IntegerField(default=0,
+                                         verbose_name=_("Total text items found"))
+    
+    average_confidence = models.FloatField(null=True,
+                                         blank=True,
+                                         verbose_name=_("Average confidence score"))
+    
+    # Image metadata
+    image_width = models.IntegerField(null=True, blank=True)
+    image_height = models.IntegerField(null=True, blank=True)
+    
+    # Processing optimization flags
+    preprocessed = models.BooleanField(default=False,
+                                     verbose_name=_("Image was preprocessed"))
+    
     class Meta:
         ordering = ['-created_at']
         verbose_name = _("OCR Job")

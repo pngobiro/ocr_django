@@ -2,8 +2,11 @@
 import os
 import requests
 import json
+import cv2
+import numpy as np
+import time
 from datetime import datetime
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -69,12 +72,47 @@ def process_ocr_job(job_id):
         
         # Get the image file
         image_path = job.image.path
+        start_time = time.time()
+        
+        # Get image dimensions
+        try:
+            import cv2
+            image = cv2.imread(image_path)
+            if image is not None:
+                height, width = image.shape[:2]
+                job.image_width = width
+                job.image_height = height
+                job.save()
+        except:
+            pass
+        
+        # Preprocess image for OCR
+        try:
+            preprocessed_image_path = preprocess_image_for_ocr(image_path)
+            processing_image_path = preprocessed_image_path
+            job.preprocessed = True
+        except Exception as e:
+            # Fall back to original image if preprocessing fails
+            processing_image_path = image_path
+            job.preprocessed = False
+        
+        job.save()
         
         # Perform OCR using NVIDIA API
-        ocr_results = perform_nvidia_ocr(image_path)
+        ocr_results = perform_nvidia_ocr(processing_image_path)
+        
+        # Calculate processing time
+        processing_time = time.time() - start_time
+        job.processing_time = processing_time
         
         # Create OCRResult objects
         create_ocr_results(job, ocr_results)
+        
+        # Calculate enhanced metadata
+        job.total_text_items = len(ocr_results)
+        if ocr_results:
+            confidences = [result['confidence'] for result in ocr_results]
+            job.average_confidence = sum(confidences) / len(confidences)
         
         # Generate Word document
         word_document_path = generate_word_document(job)
@@ -84,6 +122,13 @@ def process_ocr_job(job_id):
         job.completed_at = timezone.now()
         job.word_document.name = word_document_path
         job.save()
+        
+        # Clean up preprocessed image if it was created
+        if job.preprocessed and preprocessed_image_path and os.path.exists(preprocessed_image_path):
+            try:
+                os.unlink(preprocessed_image_path)
+            except:
+                pass
         
     except Exception as e:
         # Update job status to failed
@@ -99,7 +144,7 @@ def process_ocr_job(job_id):
 
 def perform_nvidia_ocr(image_path):
     """
-    Perform OCR using NVIDIA's OCDRNet API - exactly as per working test command.
+    Perform OCR using NVIDIA's OCDRNet API with preprocessing optimizations.
     
     Args:
         image_path (str): Path to the image file.
@@ -116,34 +161,47 @@ def perform_nvidia_ocr(image_path):
     if not api_key:
         raise ValueError("NVIDIA API key not configured")
     
-    # NVAI endpoint for the ocdrnet NIM - exact from working code
-    nvai_url = "https://ai.api.nvidia.com/v1/cv/nvidia/ocdrnet"
-    header_auth = f"Bearer {api_key}"
-    
-    # Upload the asset - exactly as in working code
-    with open(image_path, "rb") as image_file:
-        asset_id = _upload_asset(image_file.read(), "Input Image")
-    
-    # Prepare the request - exactly as in working code
-    inputs = {"image": f"{asset_id}", "render_label": False}
-    asset_list = f"{asset_id}"
-    
-    headers = {
-        "Content-Type": "application/json",
-        "NVCF-INPUT-ASSET-REFERENCES": asset_list,
-        "NVCF-FUNCTION-ASSET-IDS": asset_list,
-        "Authorization": header_auth,
-    }
-    
-    # Send request to NVIDIA OCR API - exactly as in working code
-    response = requests.post(nvai_url, headers=headers, json=inputs)
-    
-    # Check for errors
-    if response.status_code != 200:
-        raise Exception(f"NVIDIA API returned status code {response.status_code}: {response.text}")
-    
-    # Handle ZIP response exactly as in the working test command
+    # Preprocess image for better OCR results
+    preprocessed_image_path = None
     try:
+        preprocessed_image_path = preprocess_image_for_ocr(image_path)
+        processing_image_path = preprocessed_image_path
+    except Exception as e:
+        # Fall back to original image if preprocessing fails
+        print(f"Image preprocessing failed: {e}")
+        processing_image_path = image_path
+    
+    try:
+        # NVAI endpoint for the ocdrnet NIM - exact from working code
+        nvai_url = "https://ai.api.nvidia.com/v1/cv/nvidia/ocdrnet"
+        header_auth = f"Bearer {api_key}"
+        
+        # Upload the asset - exactly as in working code
+        with open(processing_image_path, "rb") as image_file:
+            asset_id = _upload_asset(image_file.read(), "Court Document OCR")
+        
+        # Prepare the request with court document optimization
+        inputs = {
+            "image": f"{asset_id}", 
+            "render_label": False  # Keep false for production use
+        }
+        asset_list = f"{asset_id}"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "NVCF-INPUT-ASSET-REFERENCES": asset_list,
+            "NVCF-FUNCTION-ASSET-IDS": asset_list,
+            "Authorization": header_auth,
+        }
+        
+        # Send request to NVIDIA OCR API - exactly as in working code
+        response = requests.post(nvai_url, headers=headers, json=inputs, timeout=300)
+        
+        # Check for errors
+        if response.status_code != 200:
+            raise Exception(f"NVIDIA API returned status code {response.status_code}: {response.text}")
+        
+        # Handle ZIP response exactly as in the working test command
         # Create temporary files for the zip and extraction
         with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_zip:
             temp_zip.write(response.content)
@@ -174,45 +232,66 @@ def perform_nvidia_ocr(image_path):
         
         ocr_results = []
         
-        # The response format from our test has 'metadata' array with label, polygon, confidence
+        # Enhanced processing based on model documentation insights
         if 'metadata' in response_data:
+            # Filter and sort results for better court document processing
+            valid_items = []
+            
             for item in response_data['metadata']:
                 text = item.get('label', '').strip()
                 confidence = item.get('confidence', 0.0)
                 polygon = item.get('polygon', {})
                 
-                if text:  # Only add non-empty text
-                    # Convert polygon format {x1, y1, x2, y2, x3, y3, x4, y4} to vertices
-                    vertices = []
-                    if polygon:
-                        vertices = [
-                            {'x': int(polygon.get('x1', 0)), 'y': int(polygon.get('y1', 0))},
-                            {'x': int(polygon.get('x2', 0)), 'y': int(polygon.get('y2', 0))},
-                            {'x': int(polygon.get('x3', 0)), 'y': int(polygon.get('y3', 0))},
-                            {'x': int(polygon.get('x4', 0)), 'y': int(polygon.get('y4', 0))}
-                        ]
-                    else:
-                        # Default fallback
-                        vertices = [
-                            {'x': 0, 'y': 0},
-                            {'x': 100, 'y': 0},
-                            {'x': 100, 'y': 20},
-                            {'x': 0, 'y': 20}
-                        ]
-                    
-                    result = {
-                        'text': text,
-                        'confidence': float(confidence),
-                        'vertices': vertices
-                    }
-                    ocr_results.append(result)
+                # Apply court document specific filters
+                if text and len(text) > 1:  # Skip single character noise
+                    # Higher confidence threshold for court documents (0.3 instead of 0.1)
+                    if confidence >= 0.3:
+                        valid_items.append((item, confidence))
+            
+            # Sort by confidence for better quality results
+            valid_items.sort(key=lambda x: x[1], reverse=True)
+            
+            for item, confidence in valid_items:
+                text = item.get('label', '').strip()
+                polygon = item.get('polygon', {})
+                
+                # Convert polygon format {x1, y1, x2, y2, x3, y3, x4, y4} to vertices
+                vertices = []
+                if polygon:
+                    vertices = [
+                        {'x': int(polygon.get('x1', 0)), 'y': int(polygon.get('y1', 0))},
+                        {'x': int(polygon.get('x2', 0)), 'y': int(polygon.get('y2', 0))},
+                        {'x': int(polygon.get('x3', 0)), 'y': int(polygon.get('y3', 0))},
+                        {'x': int(polygon.get('x4', 0)), 'y': int(polygon.get('y4', 0))}
+                    ]
+                else:
+                    vertices = [
+                        {'x': 0, 'y': 0},
+                        {'x': 100, 'y': 0},
+                        {'x': 100, 'y': 20},
+                        {'x': 0, 'y': 20}
+                    ]
+                
+                result = {
+                    'text': text,
+                    'confidence': float(confidence),
+                    'vertices': vertices
+                }
+                ocr_results.append(result)
         
         return ocr_results
-        
+            
     except json.JSONDecodeError as e:
         raise Exception(f"Failed to parse JSON response: {str(e)}")
     except Exception as e:
         raise Exception(f"Error processing OCR response: {str(e)}")
+    finally:
+        # Clean up preprocessed image
+        if preprocessed_image_path and os.path.exists(preprocessed_image_path):
+            try:
+                os.unlink(preprocessed_image_path)
+            except:
+                pass
 
 def format_bbox_to_vertices(bbox):
     """
@@ -316,7 +395,7 @@ def create_ocr_results(job, ocr_results):
 
 def generate_word_document(job):
     """
-    Generate a Word document from the OCR results.
+    Generate a professional Word document from OCR results optimized for court documents.
     
     Args:
         job (OCRJob): The job object.
@@ -324,64 +403,173 @@ def generate_word_document(job):
     Returns:
         str: Path to the generated Word document.
     """
+    from docx.shared import RGBColor
+    from docx.enum.style import WD_STYLE_TYPE
+    
     # Create a new Document
     doc = Document()
     
-    # Add document title
-    doc.add_heading('OCR Results', level=1)
+    # Set document margins for legal documents
+    sections = doc.sections
+    for section in sections:
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1.25)  # Standard legal margin
+        section.right_margin = Inches(1)
     
-    # Add document info
-    doc.add_paragraph(f'Processing Date: {timezone.now().strftime("%Y-%m-%d %H:%M:%S")}')
-    doc.add_paragraph(f'Job ID: {job.id}')
-    doc.add_paragraph(f'Image: {os.path.basename(job.image.name)}')
-    doc.add_paragraph(f'Total Items: {job.results.count()}')
+    # Add document header with legal formatting
+    header_paragraph = doc.add_heading('COURT DOCUMENT - OCR TRANSCRIPTION', level=1)
+    header_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # Add horizontal line
-    doc.add_paragraph('_' * 50)
+    # Add document metadata in professional format
+    doc.add_paragraph('_' * 80)
     
-    # Add section for extracted text
-    doc.add_heading('Extracted Text', level=2)
+    metadata_table = doc.add_table(rows=5, cols=2)
+    metadata_table.style = 'Table Grid'
     
-    # Get results ordered by vertical position
-    results = job.results.all().order_by('y1')
+    metadata_cells = [
+        ('Processing Date:', timezone.now().strftime("%B %d, %Y at %I:%M %p")),
+        ('Document ID:', f'OCR-{job.id:06d}'),
+        ('Source Image:', os.path.basename(job.image.name)),
+        ('Text Items Detected:', str(job.results.count())),
+        ('Processing Status:', 'COMPLETED')
+    ]
     
-    # Add the text content
+    for i, (label, value) in enumerate(metadata_cells):
+        row = metadata_table.rows[i]
+        row.cells[0].text = label
+        row.cells[1].text = value
+        # Make labels bold
+        row.cells[0].paragraphs[0].runs[0].bold = True
+    
+    doc.add_paragraph('_' * 80)
+    
+    # Add main content section
+    content_heading = doc.add_heading('EXTRACTED TEXT CONTENT', level=2)
+    content_heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    
+    # Get results ordered by reading order (top to bottom, left to right)
+    results = job.results.all().order_by('y1', 'x1')
+    
+    # Group results by approximate line (within 15 pixels vertically)
+    lines = []
+    current_line = []
+    last_y = None
+    
     for result in results:
-        p = doc.add_paragraph()
-        run = p.add_run(result.text)
-        run.bold = result.confidence > 0.9  # Bold text with high confidence
+        if last_y is None or abs(result.y1 - last_y) <= 15:
+            current_line.append(result)
+        else:
+            if current_line:
+                # Sort current line by x-coordinate (left to right)
+                current_line.sort(key=lambda r: r.x1)
+                lines.append(current_line)
+            current_line = [result]
+        last_y = result.y1
     
-    # Add horizontal line
-    doc.add_paragraph('_' * 50)
+    # Add the last line
+    if current_line:
+        current_line.sort(key=lambda r: r.x1)
+        lines.append(current_line)
     
-    # Add detailed results table
-    doc.add_heading('Detailed Results', level=2)
+    # Add reconstructed text
+    for line in lines:
+        line_text = ' '.join([result.text for result in line])
+        if line_text.strip():
+            p = doc.add_paragraph()
+            run = p.add_run(line_text)
+            
+            # Calculate average confidence for the line
+            avg_confidence = sum([result.confidence for result in line]) / len(line)
+            
+            # Style based on confidence
+            if avg_confidence >= 0.9:
+                run.bold = True  # High confidence = bold
+            elif avg_confidence < 0.5:
+                run.font.color.rgb = RGBColor(128, 128, 128)  # Low confidence = gray
+                run.italic = True
+            
+            # Add spacing between paragraphs for readability
+            p.paragraph_format.space_after = Pt(6)
     
-    # Create table
-    table = doc.add_table(rows=1, cols=4)
-    table.style = 'Table Grid'
+    # Add confidence analysis section
+    doc.add_page_break()
+    doc.add_heading('TRANSCRIPTION QUALITY ANALYSIS', level=2)
     
-    # Add header row
-    header_cells = table.rows[0].cells
-    header_cells[0].text = 'Text'
-    header_cells[1].text = 'Confidence'
-    header_cells[2].text = 'Position (x, y)'
-    header_cells[3].text = 'Size (w x h)'
+    # Calculate statistics
+    confidences = [r.confidence for r in results]
+    if confidences:
+        avg_confidence = sum(confidences) / len(confidences)
+        high_conf_count = len([c for c in confidences if c >= 0.8])
+        medium_conf_count = len([c for c in confidences if 0.5 <= c < 0.8])
+        low_conf_count = len([c for c in confidences if c < 0.5])
+        
+        stats_table = doc.add_table(rows=5, cols=2)
+        stats_table.style = 'Table Grid'
+        
+        stats_data = [
+            ('Average Confidence:', f'{avg_confidence:.1%}'),
+            ('High Confidence Items (≥80%):', f'{high_conf_count} ({high_conf_count/len(confidences):.1%})'),
+            ('Medium Confidence Items (50-79%):', f'{medium_conf_count} ({medium_conf_count/len(confidences):.1%})'),
+            ('Low Confidence Items (<50%):', f'{low_conf_count} ({low_conf_count/len(confidences):.1%})'),
+            ('Recommendation:', 'Review low confidence items manually' if low_conf_count > 0 else 'High quality transcription')
+        ]
+        
+        for i, (label, value) in enumerate(stats_data):
+            row = stats_table.rows[i]
+            row.cells[0].text = label
+            row.cells[1].text = value
+            row.cells[0].paragraphs[0].runs[0].bold = True
     
-    # Add data rows
+    # Add detailed results table for reference
+    doc.add_page_break()
+    doc.add_heading('DETAILED EXTRACTION DATA', level=2)
+    
+    detail_table = doc.add_table(rows=1, cols=5)
+    detail_table.style = 'Table Grid'
+    
+    # Header row
+    header_cells = detail_table.rows[0].cells
+    headers = ['Text Content', 'Confidence', 'Position (X,Y)', 'Dimensions', 'Quality']
+    for i, header in enumerate(headers):
+        header_cells[i].text = header
+        header_cells[i].paragraphs[0].runs[0].bold = True
+    
+    # Data rows
     for result in results:
-        row_cells = table.add_row().cells
-        row_cells[0].text = result.text
+        row_cells = detail_table.add_row().cells
+        row_cells[0].text = result.text[:50] + ('...' if len(result.text) > 50 else '')
         row_cells[1].text = f'{result.confidence:.3f}'
         row_cells[2].text = f'({result.x1}, {result.y1})'
         
-        # Calculate width and height
+        # Calculate dimensions
         width = max(result.x2, result.x3) - min(result.x1, result.x4)
         height = max(result.y3, result.y4) - min(result.y1, result.y2)
-        row_cells[3].text = f'{width} x {height}'
+        row_cells[3].text = f'{width}×{height}px'
+        
+        # Quality assessment
+        if result.confidence >= 0.8:
+            quality = 'HIGH'
+        elif result.confidence >= 0.5:
+            quality = 'MEDIUM'
+        else:
+            quality = 'LOW'
+        row_cells[4].text = quality
+    
+    # Add footer disclaimer
+    doc.add_paragraph()
+    footer_para = doc.add_paragraph()
+    footer_run = footer_para.add_run(
+        "NOTICE: This document was generated using automated OCR technology. "
+        "Please review the transcription quality analysis and verify accuracy "
+        "against the original document before legal use."
+    )
+    footer_run.italic = True
+    footer_run.font.size = Pt(10)
+    footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     # Save the document
-    document_path = f'documents/ocr_document_{job.id}.docx'
+    document_path = f'documents/court_ocr_document_{job.id}.docx'
     full_path = os.path.join(settings.MEDIA_ROOT, document_path)
     
     # Ensure directory exists
@@ -390,3 +578,87 @@ def generate_word_document(job):
     doc.save(full_path)
     
     return document_path
+
+def preprocess_image_for_ocr(image_path):
+    """
+    Preprocess image for better OCR accuracy based on NVIDIA OCDRNet requirements.
+    The model documentation shows it works best with grayscale images.
+    
+    Args:
+        image_path (str): Path to the input image
+        
+    Returns:
+        str: Path to the preprocessed image
+    """
+    import tempfile
+    
+    # Read image
+    image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError(f"Could not read image from {image_path}")
+    
+    # Convert to grayscale (model prefers grayscale)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Apply image enhancements for handwritten court documents
+    # 1. Denoise the image
+    denoised = cv2.fastNlMeansDenoising(gray)
+    
+    # 2. Enhance contrast for faded handwriting
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(denoised)
+    
+    # 3. Apply slight Gaussian blur to smooth out pen marks
+    smoothed = cv2.GaussianBlur(enhanced, (3, 3), 0)
+    
+    # 4. Ensure image dimensions are multiples of 32 (as per model requirements)
+    height, width = smoothed.shape
+    new_height = ((height + 31) // 32) * 32
+    new_width = ((width + 31) // 32) * 32
+    
+    # Resize if needed
+    if new_height != height or new_width != width:
+        smoothed = cv2.resize(smoothed, (new_width, new_height))
+    
+    # Save preprocessed image
+    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+        cv2.imwrite(temp_file.name, smoothed)
+        return temp_file.name
+
+def detect_text_orientation(image_path):
+    """
+    Detect if text is rotated and return rotation angle.
+    Important for court documents that might be scanned at angles.
+    """
+    import cv2
+    import pytesseract
+    
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    
+    # Try different rotation angles
+    angles = [0, 90, 180, 270]
+    best_confidence = 0
+    best_angle = 0
+    
+    for angle in angles:
+        if angle != 0:
+            # Rotate image
+            center = tuple(np.array(image.shape[1::-1]) / 2)
+            rot_mat = cv2.getRotationMatrix2D(center, angle, 1.0)
+            rotated = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
+        else:
+            rotated = image
+        
+        # Use Tesseract to get confidence
+        try:
+            data = pytesseract.image_to_data(rotated, output_type=pytesseract.Output.DICT)
+            confidences = [int(conf) for conf in data['conf'] if int(conf) > 0]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+            
+            if avg_confidence > best_confidence:
+                best_confidence = avg_confidence
+                best_angle = angle
+        except:
+            continue
+    
+    return best_angle
